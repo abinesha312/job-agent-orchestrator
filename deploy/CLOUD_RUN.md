@@ -1,6 +1,15 @@
 # Cloud Run notes
 
-I have not deployed this. Nothing here signs you up for a paid service.
+The image now builds the Vue frontend and serves it from the same container: the UI is at `/` and the API is at `/api`.
+Without `DATABASE_URL` it runs on the in-memory store, so state resets on a cold start. For a demo, pin it to one instance:
+
+```bash
+gcloud run deploy applypilot --source . --region us-central1 --min-instances 1 --max-instances 1 --allow-unauthenticated
+```
+
+`--source` builds with Cloud Build, so no local Docker is needed. Drop `--allow-unauthenticated` if it should not be public. Do not import a real applications export into a public instance.
+
+Nothing here signs you up for a paid service by itself.
 
 If I do it later:
 

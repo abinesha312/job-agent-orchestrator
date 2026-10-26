@@ -8,3 +8,5 @@ __pycache__
 data
 *.pyc
 .env
+web/node_modules
+web/dist
