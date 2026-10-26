@@ -1,0 +1,23 @@
+Jordan Q. Sample
+Austin, TX | jordan.sample@example.com | (512) 555-0199
+
+SUMMARY
+Backend engineer with 5 years building Python data services and APIs on cloud platforms.
+
+EXPERIENCE
+Senior Software Engineer, Acme Widgets Inc. (fictional), 2022 - Present
+• Built FastAPI services handling 2M requests per day with p99 latency under 120 ms.
+• Migrated batch ETL jobs from cron to Airflow, cutting failures by 40 percent.
+• Introduced pgvector-backed semantic search over product catalog.
+Software Engineer, Example Logistics LLC (fictional), 2019 - 2022
+• Wrote Python microservices on Kubernetes for shipment tracking.
+• Added Prometheus metrics and Grafana dashboards for on-call.
+
+EDUCATION
+B.S. Computer Science, State University of Nowhere (fictional), 2019
+
+SKILLS
+Python, FastAPI, PostgreSQL, pgvector, Docker, Kubernetes, Airflow, GCP, Terraform
+
+PROJECTS
+Open Recipe Graph: knowledge graph of recipes with embedding search (personal project).

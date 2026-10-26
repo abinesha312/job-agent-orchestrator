@@ -1,0 +1,22 @@
+# Local development only. Credentials below are throwaway dev defaults, not secrets.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: job_agent_db
+    environment:
+      POSTGRES_USER: job_agent
+      POSTGRES_PASSWORD: job_agent
+      POSTGRES_DB: job_agent
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U job_agent -d job_agent"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  pgdata:
