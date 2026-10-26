@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import os
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from job_agent import __version__
 from job_agent.agents.resume import ingest_resume
+from job_agent.api.agent_routes import register_agent_routes
+from job_agent.api.history_routes import register_history_routes
 from job_agent.api.pipeline_routes import register_pipeline_routes
 from job_agent.config import Settings, get_settings
 from job_agent.embeddings.base import Embedder
@@ -142,6 +146,10 @@ def create_app(
         except ApplyPilotError as exc:
             raise HTTPException(502, str(exc)) from exc
         v = result.version
+        request.app.state.store.add_run(
+            step="resume", message=f"parsed {filename}: {len(result.chunks)} chunks, v{v.version}",
+            detail={"chunks": len(result.chunks), "version": v.version}, resume_id=v.resume_id,
+        )
         return ResumeUploadResponse(
             resume_id=v.resume_id, version_id=v.version_id, version=v.version,
             filename=filename, chunk_count=len(result.chunks),
@@ -177,9 +185,22 @@ def create_app(
         return ChunksResponse(resume_id=resume_id, version=resolved, count=len(out), chunks=out)
 
     register_pipeline_routes(app)
+    register_agent_routes(app)
+    register_history_routes(app)
     return app
 
 
 def app_factory() -> FastAPI:
-    """Entry point for ``uvicorn --factory job_agent.api.app:app_factory``."""
-    return create_app()
+    """Entry point for ``uvicorn --factory job_agent.api.app:app_factory``.
+
+    If a built frontend exists (WEB_DIST, default ``web/dist``) it is served at ``/`` and the
+    API moves under ``/api``, which is the path the frontend already calls.
+    """
+    api = create_app()
+    dist = Path(os.environ.get("WEB_DIST", "web/dist"))
+    if not (dist / "index.html").is_file():
+        return api
+    root = FastAPI(title="ApplyPilot", docs_url=None, redoc_url=None, openapi_url=None)
+    root.mount("/api", api)
+    root.mount("/", StaticFiles(directory=dist, html=True), name="web")
+    return root

@@ -175,7 +175,12 @@ def register_pipeline_routes(app: FastAPI) -> None:
             client.close()
         store = request.app.state.store
         for err in [*found.errors, *save_errors]:
-            store.add_run(step="discover", ok=False, message=err)
+            store.add_run(step="discovery", ok=False, message=err)
+        store.add_run(
+            step="discovery", ok=not (found.errors or save_errors),
+            message=f"{len(saved)} jobs saved from {len(boards)} boards",
+            detail={"boards": len(boards), "saved": len(saved)},
+        )
         return {
             "saved": len(saved),
             "created": sum(1 for _, created in saved if created),
@@ -195,6 +200,8 @@ def register_pipeline_routes(app: FastAPI) -> None:
         if errors or not saved:
             raise HTTPException(502, errors[0] if errors else "could not store job")
         job, created = saved[0]
+        request.app.state.store.add_run(
+            step="discovery", message=f"imported {job.company} - {job.title}", job_id=job.job_id)
         return {**_job_brief(request.app.state.store, job), "created": created}
 
     @app.post("/jobs/import-url", status_code=201)
@@ -386,6 +393,7 @@ def register_pipeline_routes(app: FastAPI) -> None:
             approve(view, approved_by=body.approved_by)
             _apply(app, view)
             store.save_application(app)
+            store.add_run(step="approval", message=f"approved by {body.approved_by}", job_id=app.job_id)
         except (ApprovalRequiredError, InvalidTransitionError) as exc:
             raise HTTPException(409, str(exc)) from exc
         return _app_out(store, app)
@@ -401,6 +409,7 @@ def register_pipeline_routes(app: FastAPI) -> None:
             transition(view, S.rejected)
             _apply(app, view)
             store.save_application(app)
+            store.add_run(step="approval", message="rejected", job_id=app.job_id)
         except (ApprovalRequiredError, InvalidTransitionError) as exc:
             raise HTTPException(409, str(exc)) from exc
         return _app_out(store, app)
@@ -418,6 +427,7 @@ def register_pipeline_routes(app: FastAPI) -> None:
             _apply(app, view)
             app.applied_at = datetime.now(UTC)
             store.save_application(app)
+            store.add_run(step="approval", message="marked applied by the user", job_id=app.job_id)
         except (ApprovalRequiredError, InvalidTransitionError) as exc:
             raise HTTPException(409, str(exc)) from exc
         return _app_out(store, app)

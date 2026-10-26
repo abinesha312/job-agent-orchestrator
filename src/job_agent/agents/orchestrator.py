@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -114,6 +115,16 @@ class StateMachineOrchestrator(Orchestrator):
                 pass
             return RunResult(job_id, status, steps=["failed"], needs_human_review=True, notes=[str(exc)])
 
+    def _log(self, step: str, message: str, *, job_id, resume_id, ok: bool = True,
+             started: float | None = None, **detail) -> None:
+        if started is not None:
+            detail["duration_ms"] = int((time.perf_counter() - started) * 1000)
+        try:
+            self.store.add_run(step=step, ok=ok, message=message, detail=detail,
+                               job_id=job_id, resume_id=resume_id)
+        except Exception:
+            pass
+
     def _client(self) -> httpx.Client:
         if self.client is not None:
             return self.client
@@ -147,11 +158,16 @@ class StateMachineOrchestrator(Orchestrator):
         if len(steps) > self.max_steps:
             raise RuntimeError("step limit")
 
+        self._log("orchestrator", f"started {job.company} - {job.title}", job_id=job_id, resume_id=resume_id)
+        t0 = time.perf_counter()
         match = score_match(
             job_id, None, store=self.store, resumes=self.resumes, embedder=self.embedder,
             resume_id=resume_id, k=self.settings.retrieval_k,
         )
         steps.append("matched")
+        self._log("retrieval", f"match score {match.match_score:.2f}, {len(match.chunks)} chunks retrieved",
+                  job_id=job_id, resume_id=resume_id, started=t0,
+                  score=match.match_score, missing_skills=match.missing_skills)
         view = _gate(app)
         if ApplicationStatus(view["status"]) == ApplicationStatus.discovered:
             transition(view, ApplicationStatus.matched)
@@ -163,11 +179,14 @@ class StateMachineOrchestrator(Orchestrator):
 
         owns_client = self.client is None
         client = self._client()
+        t0 = time.perf_counter()
         try:
             found = find_contacts(job, client=client, timeout=min(8, self.settings.http_timeout_s), retries=1)
             self.store.replace_contacts(job.job_id, to_stored(job.job_id, found))
             steps.append("contacts")
             notes.append(f"{len(found)} contacts, none verified")
+            self._log("email_finder", f"{len(found)} contacts, none verified",
+                      job_id=job_id, resume_id=resume_id, started=t0, count=len(found))
         except Exception as exc:
             notes.append(f"contacts skipped: {exc}")
             self.store.add_run(
@@ -180,12 +199,20 @@ class StateMachineOrchestrator(Orchestrator):
         if len(steps) > self.max_steps:
             raise RuntimeError("step limit")
 
+        t0 = time.perf_counter()
         tailored = tailor_resume(
             match.resume_version_id, job_id, resumes=self.resumes, store=self.store,
             embedder=self.embedder, upload_dir=self.settings.upload_dir, settings=self.settings,
             k=self.settings.retrieval_k,
         )
         steps.append("tailored")
+        self._log("tailoring", f"draft written, mode {tailored.mode}", job_id=job_id,
+                  resume_id=resume_id, started=t0, mode=tailored.mode)
+        scores = (tailored.report or {}).get("scores") or {}
+        self._log("evaluator", "all gates passed" if not tailored.blocked else "blocked: " + ", ".join(tailored.failures),
+                  job_id=job_id, resume_id=resume_id, ok=not tailored.blocked,
+                  failures=tailored.failures,
+                  scores={k: v.get("score") for k, v in scores.items()})
         view = _gate(app)
         if ApplicationStatus(view["status"]) == ApplicationStatus.matched:
             transition(view, ApplicationStatus.tailored)
@@ -211,6 +238,7 @@ class StateMachineOrchestrator(Orchestrator):
                 transition(view, ApplicationStatus.awaiting_approval)
                 _apply(app, view)
             steps.append("awaiting_approval")
+            self._log("approval", "waiting for your approval", job_id=job_id, resume_id=resume_id)
         self.store.save_application(app)
         self.store.add_run(
             step="orchestrator", ok=not tailored.blocked, message="; ".join(notes) or "ok",

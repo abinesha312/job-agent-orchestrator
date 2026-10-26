@@ -18,7 +18,7 @@ Python 3.11+.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev,ui]"
+pip install -e ".[dev]"
 cp .env.example .env
 ```
 
@@ -33,12 +33,38 @@ alembic upgrade head
 
 ## Run
 
+Backend:
+
 ```bash
-uvicorn --factory job_agent.api.app:app_factory --reload
-streamlit run ui/streamlit_app.py
+uvicorn --factory job_agent.api.app:app_factory --port 8010 --reload
 ```
 
-The UI talks to `API_URL` (default `http://localhost:8000`).
+Frontend (Vue 3 + TypeScript, Node 18+):
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+The dev server proxies `/api` to `http://localhost:8010`. Set `API_URL` in the shell to point it somewhere else. `npm run build` type-checks and writes `web/dist`.
+
+Tabs: Agents (main agent, its subagents, and every task they ran), Resume, Jobs, Review, Evals.
+
+## Evals
+
+The Evals tab runs eight suites against the API:
+
+- Retrieval: context precision and context recall (RAGAS definitions, computed offline).
+- Generation: faithfulness, answer relevancy, keyword coverage.
+- Format and ATS: DOCX renders, sections intact, no placeholder text.
+- Hallucination and approval guardrails: plants fake skills and employers, checks the gates catch them, checks nothing is approved without you.
+- Release gates: the five hard gates over the 20 golden pairs.
+- Live applications: re-scores the drafts in the pipeline.
+- RAGAS (LLM judge): the real `ragas` library. Needs `pip install ragas` and `OPENAI_API_KEY`.
+- DeepEval (LLM judge): the real `deepeval` library, faithfulness and answer relevancy. Needs `pip install deepeval` and `OPENAI_API_KEY`.
+
+A suite whose engine is missing reports skipped with the reason.
 
 Evals and tests:
 

@@ -26,3 +26,7 @@ data/
 *.sqlite
 .deepeval/
 .DS_Store
+
+# Frontend
+web/node_modules/
+web/dist/

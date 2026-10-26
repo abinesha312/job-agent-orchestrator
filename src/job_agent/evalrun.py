@@ -40,7 +40,8 @@ def load_pairs(path: Path | None = None) -> list[dict]:
     return pairs
 
 
-def run_pair(pair: dict, embedder: FakeEmbedder | None = None) -> dict:
+def prepare_pair(pair: dict, embedder: FakeEmbedder | None = None) -> dict:
+    """Run retrieval and the offline tailoring for one pair and keep the intermediates."""
     embedder = embedder or FakeEmbedder(dim=768)
     text = pair["resume_text"]
     jd = pair["jd_text"]
@@ -59,24 +60,32 @@ def run_pair(pair: dict, embedder: FakeEmbedder | None = None) -> dict:
     tailored = fallback_resume(text, terms)
     name = pair.get("name") or "Jordan Q. Sample"
     subject, body = fallback_email(name, pair.get("company") or "Example Corp", pair.get("title") or "Engineer", tailored)
+    return {
+        "id": pair.get("id"), "original": text, "jd": jd, "terms": terms,
+        "retrieved": retrieved, "tailored": tailored, "subject": subject, "body": body,
+    }
+
+
+def run_pair(pair: dict, embedder: FakeEmbedder | None = None) -> dict:
+    prep = prepare_pair(pair, embedder)
     with tempfile.TemporaryDirectory() as tmp:
         docx_path = Path(tmp) / "tailored.docx"
-        write_resume_docx(tailored, docx_path)
+        write_resume_docx(prep["tailored"], docx_path)
         report = evaluate(
-            original=text,
-            tailored=tailored,
-            jd=jd,
-            retrieved_chunks=retrieved,
-            must_have=terms,
+            original=prep["original"],
+            tailored=prep["tailored"],
+            jd=prep["jd"],
+            retrieved_chunks=prep["retrieved"],
+            must_have=prep["terms"],
             docx_path=str(docx_path),
         )
     return {
-        "id": pair.get("id"),
+        "id": prep["id"],
         "passed": report.passed,
         "failures": report.failures,
         "scores": {row.name: row.score for row in report.results},
-        "subject": subject,
-        "email_ok": bool(body.strip()),
+        "subject": prep["subject"],
+        "email_ok": bool(prep["body"].strip()),
     }
 
 

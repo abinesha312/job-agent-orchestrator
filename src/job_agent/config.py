@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     upload_dir: Path = Path("./data/uploads")
     run_log_path: Path = Path("./data/run_log.jsonl")
+    history_path: Path = Path("./data/history.json")
     max_upload_mb: int = 10
 
     # Chunking
