@@ -1,0 +1,151 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { api } from '../api'
+import { session } from '../session'
+import { clock } from '../format'
+import AgentCardView from '../components/AgentCardView.vue'
+import type { AgentsOverview, PipelineRow, Task } from '../types'
+
+const data = ref<AgentsOverview | null>(null)
+const events = ref<Task[]>([])
+const error = ref('')
+const running = ref(false)
+const lastRun = ref<PipelineRow[]>([])
+const filter = ref('')
+let timer: ReturnType<typeof setInterval> | undefined
+
+async function refresh() {
+  try {
+    const [a, t] = await Promise.all([api.agents(), api.timeline()])
+    data.value = a
+    events.value = t.events
+    error.value = ''
+  } catch (e) {
+    error.value = (e as Error).message
+  }
+}
+
+async function runPipeline() {
+  if (!session.resumeId) {
+    error.value = 'Parse a resume first (Resume tab).'
+    return
+  }
+  running.value = true
+  error.value = ''
+  try {
+    lastRun.value = (await api.run(session.resumeId)).results
+  } catch (e) {
+    error.value = (e as Error).message
+  } finally {
+    running.value = false
+    refresh()
+  }
+}
+
+function pick(id: string) {
+  filter.value = filter.value === id ? '' : id
+}
+
+const shown = computed(() => {
+  const rows = filter.value ? events.value.filter((e) => e.agent === filter.value) : events.value
+  return [...rows].reverse().slice(0, 80)
+})
+
+const flow = computed(() => data.value?.subagents.map((s) => s.name) ?? [])
+
+onMounted(() => {
+  refresh()
+  timer = setInterval(refresh, 3000)
+})
+onUnmounted(() => clearInterval(timer))
+</script>
+
+<template>
+  <section class="stack">
+    <div class="panel row top">
+      <div class="grow">
+        <h2>Agent workflow</h2>
+        <p class="muted">
+          The main agent drives each job through its subagents and stops at your approval.
+          {{ data ? `${data.total_tasks} tasks logged.` : '' }}
+        </p>
+      </div>
+      <button class="primary" :disabled="running || !session.resumeId" @click="runPipeline">
+        {{ running ? 'Running...' : 'Run pipeline on all jobs' }}
+      </button>
+      <span v-if="!session.resumeId" class="muted">No resume yet.</span>
+    </div>
+
+    <p v-if="error" class="notice bad">{{ error }}</p>
+
+    <div v-if="lastRun.length" class="panel">
+      <h3>Last run</h3>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Job</th><th>Status</th><th>Steps</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr v-for="r in lastRun" :key="r.job_id">
+              <td class="mono">{{ r.job_id.slice(0, 8) }}</td>
+              <td><span class="pill" :class="r.needs_human_review ? 'warn' : 'ok'">{{ r.status }}</span></td>
+              <td>{{ r.steps.join(' > ') }}</td>
+              <td class="muted">{{ r.notes.join('; ') }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <template v-if="data">
+      <div class="tree">
+        <div class="main-wrap">
+          <AgentCardView :agent="data.main" main :selected="filter === data.main.id" @select="pick" />
+        </div>
+        <div class="trunk"></div>
+        <div class="subs">
+          <AgentCardView
+            v-for="s in data.subagents" :key="s.id" :agent="s"
+            :selected="filter === s.id" @select="pick"
+          />
+        </div>
+      </div>
+      <p class="muted flow">Flow: {{ flow.join('  >  ') }}</p>
+    </template>
+    <p v-else-if="!error" class="muted">Loading...</p>
+
+    <div class="panel">
+      <div class="row">
+        <h3 class="grow">Activity {{ filter ? `(${filter})` : '' }}</h3>
+        <button v-if="filter" @click="filter = ''">Show all</button>
+      </div>
+      <p v-if="!shown.length" class="muted">Nothing yet. Upload a resume, add jobs, then run the pipeline.</p>
+      <div v-else class="scroll-x">
+        <table>
+          <thead><tr><th>Time</th><th>Agent</th><th></th><th>Task</th><th>Job</th><th>ms</th></tr></thead>
+          <tbody>
+            <tr v-for="e in shown" :key="e.id">
+              <td class="mono">{{ clock(e.created_at) }}</td>
+              <td>{{ e.agent }}</td>
+              <td><span class="pill" :class="e.ok ? 'ok' : 'bad'">{{ e.ok ? 'ok' : 'fail' }}</span></td>
+              <td>{{ e.message }}</td>
+              <td class="mono muted">{{ e.job_id ? e.job_id.slice(0, 8) : '' }}</td>
+              <td class="mono muted">{{ e.detail?.duration_ms ?? '' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.top { justify-content: space-between; }
+.grow { flex: 1; min-width: 220px; }
+.tree { display: flex; flex-direction: column; align-items: stretch; }
+.main-wrap { max-width: 560px; width: 100%; margin: 0 auto; }
+.trunk { width: 2px; height: 22px; background: var(--line); margin: 0 auto; }
+.subs {
+  display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  position: relative; padding-top: 14px; border-top: 2px solid var(--line);
+}
+.flow { font-size: 12px; margin: 0; }
+</style>
