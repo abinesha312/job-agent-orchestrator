@@ -170,8 +170,22 @@ class Contact(MetadataMixin, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     title: Mapped[str | None] = mapped_column(String(255))
     email: Mapped[str | None] = mapped_column(String(320))
-    source: Mapped[str] = mapped_column(String(32), nullable=False, default="apollo", server_default="apollo")
+    # free-form: public_page, pattern_guess, ... the old server default is just a leftover
+    source: Mapped[str] = mapped_column(String(32), nullable=False, default="public_page", server_default="apollo")
     verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+
+
+class RunLog(MetadataMixin, Base):
+    __tablename__ = "run_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("jobs.job_id", ondelete="SET NULL")
+    )
+    resume_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    step: Mapped[str] = mapped_column(String(64), nullable=False)
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    message: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
 
 
 ALL_TABLES = [
@@ -181,4 +195,5 @@ ALL_TABLES = [
     "matches",
     "applications",
     "contacts",
+    "run_log",
 ]

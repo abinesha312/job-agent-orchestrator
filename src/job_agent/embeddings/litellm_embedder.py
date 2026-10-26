@@ -7,6 +7,8 @@ environment (``GEMINI_API_KEY``, or Vertex AI via ``vertex_ai/...`` models with
 
 from __future__ import annotations
 
+import time
+
 
 class LiteLLMEmbedder:
     def __init__(self, model: str = "gemini/gemini-embedding-001", dim: int = 768,
@@ -22,6 +24,22 @@ class LiteLLMEmbedder:
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError("LiteLLM not installed: pip install -e '.[llm]'") from exc
 
+        delay = 0.4
+        last: Exception | None = None
+        for attempt in range(3):
+            try:
+                return self._embed_once(litellm, texts)
+            except (ValueError, RuntimeError):
+                raise
+            except Exception as exc:
+                last = exc
+                if attempt == 2:
+                    raise RuntimeError(f"embedding failed: {exc}") from exc
+                time.sleep(delay)
+                delay *= 2
+        raise RuntimeError(f"embedding failed: {last}")
+
+    def _embed_once(self, litellm, texts: list[str]) -> list[list[float]]:
         out: list[list[float]] = []
         for i in range(0, len(texts), self.batch_size):
             batch = texts[i : i + self.batch_size]

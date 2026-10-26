@@ -1,5 +1,4 @@
-"""Resume agent (Phase 1, REAL): parse an uploaded PDF/DOCX, chunk it by section,
-embed the chunks, and store them with metadata as a new resume version."""
+"""Parse a PDF/DOCX, chunk it, embed, store a new version."""
 
 from __future__ import annotations
 
@@ -10,8 +9,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from job_agent.embeddings.base import Embedder
+from job_agent.embeddings.util import embed_texts
+from job_agent.errors import ApplyPilotError, StorageFailure
+from job_agent.log import event
 from job_agent.parsing.chunker import Chunk, chunk_resume
-from job_agent.parsing.extract import extract_text, file_type_for
+from job_agent.parsing.extract import (
+    ResumeParseError,
+    UnsupportedFileType,
+    extract_text,
+    file_type_for,
+)
 from job_agent.storage.repository import ResumeRepository, StoredVersion
 from job_agent.tracing.langfuse_hook import trace_step
 
@@ -47,34 +54,43 @@ def ingest_resume(
     max_chars: int = 800,
 ) -> IngestResult:
     """Parse, chunk, embed and persist a resume. Pass ``resume_id`` to add a new version."""
-    file_type_for(filename)  # fail fast on unsupported extensions
-    resume_id = resume_id or uuid.uuid4()
-    version = repository.next_version(resume_id)
+    try:
+        file_type_for(filename)  # fail fast on a .txt someone dropped in
+        resume_id = resume_id or uuid.uuid4()
+        version = repository.next_version(resume_id)
+        chunks = parse_and_chunk(
+            data, filename, resume_id=str(resume_id), version=version, max_chars=max_chars,
+        )
+        embeddings = embed_texts(embedder, [c.text for c in chunks])
+        for c in chunks:
+            c.metadata["embedding_model"] = embedder.name
 
-    chunks = parse_and_chunk(data, filename, resume_id=str(resume_id), version=version,
-                             max_chars=max_chars)
-    embeddings = embedder.embed([c.text for c in chunks])
-    for c in chunks:
-        c.metadata["embedding_model"] = embedder.name
+        safe = _SAFE_NAME_RE.sub("_", Path(filename).name) or "resume"
+        dest = Path(upload_dir) / str(resume_id) / f"v{version}_{safe}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
 
-    safe = _SAFE_NAME_RE.sub("_", Path(filename).name) or "resume"
-    dest = Path(upload_dir) / str(resume_id) / f"v{version}_{safe}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    dest.write_bytes(data)
-
-    stored = repository.save_version(
-        resume_id=resume_id,
-        version=version,
-        file_path=str(dest),
-        metadata={
-            "source_filename": filename,
-            "sha256": hashlib.sha256(data).hexdigest(),
-            "chunk_count": len(chunks),
-            "sections": sorted({c.section for c in chunks}),
-            "embedding_model": embedder.name,
-            "kind": "original",
-        },
-        chunks=chunks,
-        embeddings=embeddings,
-    )
-    return IngestResult(stored, chunks)
+        stored = repository.save_version(
+            resume_id=resume_id,
+            version=version,
+            file_path=str(dest),
+            metadata={
+                "source_filename": filename,
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "chunk_count": len(chunks),
+                "sections": sorted({c.section for c in chunks}),
+                "embedding_model": embedder.name,
+                "kind": "original",
+            },
+            chunks=chunks,
+            embeddings=embeddings,
+        )
+        return IngestResult(stored, chunks)
+    except (UnsupportedFileType, ResumeParseError):
+        raise
+    except ApplyPilotError:
+        event("resume_ingest", ok=False, file=filename)
+        raise
+    except Exception as exc:
+        event("resume_ingest", ok=False, file=filename, error=str(exc))
+        raise StorageFailure(f"could not store resume: {exc}") from exc
