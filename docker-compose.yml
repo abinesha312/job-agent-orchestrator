@@ -18,5 +18,20 @@ services:
       timeout: 3s
       retries: 20
 
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://job_agent:job_agent@db:5432/job_agent
+      EMBEDDING_BACKEND: fake
+      LLM_JUDGE: "off"
+      PORT: "8080"
+    ports:
+      - "8080:8080"
+
 volumes:
   pgdata:

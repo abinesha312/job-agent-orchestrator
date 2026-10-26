@@ -22,7 +22,7 @@ service-account*.json
 credentials*.json
 
 # Local data
-data/uploads/
+data/
 *.sqlite
 .deepeval/
 .DS_Store
