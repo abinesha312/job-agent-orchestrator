@@ -1,0 +1,3 @@
+Example Corp (fictional) — Backend Engineer, AI Platform
+Must have: Python, FastAPI, PostgreSQL, vector search, Docker.
+Nice to have: Kubernetes, GCP, LLM evaluation, Terraform.
