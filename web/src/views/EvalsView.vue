@@ -12,6 +12,48 @@ const running = ref<string[]>([])
 const error = ref('')
 const sample = ref(5)
 const onlyFailed = ref(false)
+type Tab = 'dashboard' | 'suites' | 'results' | 'history'
+const tab = ref<Tab>('dashboard')
+const tabs: { id: Tab; label: string }[] = [
+  { id: 'dashboard', label: 'Dashboard' },
+  { id: 'suites', label: 'Suites' },
+  { id: 'results', label: 'Results' },
+  { id: 'history', label: 'History' },
+]
+
+// newest run per suite; oldest first for the trend line
+const chrono = computed(() => [...history.value].sort((a, b) => a.started_at.localeCompare(b.started_at)))
+const latest = computed(() => {
+  const m = new Map<string, Omit<EvalRun, 'cases'>>()
+  for (const r of chrono.value) m.set(r.suite, r)
+  return [...m.values()]
+})
+const ran = computed(() => latest.value.filter((r) => r.status !== 'skipped'))
+const kpi = computed(() => {
+  const total = ran.value.reduce((a, r) => a + r.total, 0)
+  const passed = ran.value.reduce((a, r) => a + r.passed, 0)
+  return {
+    suites: ran.value.length,
+    passing: ran.value.filter((r) => r.status === 'passed').length,
+    skipped: latest.value.length - ran.value.length,
+    total,
+    passed,
+    rate: total ? passed / total : null,
+  }
+})
+const metricAvg = computed(() => {
+  const acc: Record<string, number[]> = {}
+  for (const r of ran.value) for (const [k, v] of Object.entries(r.summary)) if (v !== null) (acc[k] ??= []).push(v)
+  return Object.entries(acc).map(([k, vs]) => ({ k, v: vs.reduce((a, b) => a + b, 0) / vs.length }))
+})
+const trend = computed(() => {
+  const pts = chrono.value.filter((r) => r.total > 0).map((r) => r.passed / r.total)
+  const W = 320
+  const H = 90
+  const xs = (i: number) => (pts.length < 2 ? W / 2 : 8 + (i * (W - 16)) / (pts.length - 1))
+  const ys = (v: number) => H - 8 - v * (H - 16)
+  return { pts, W, H, line: pts.map((v, i) => `${xs(i)},${ys(v)}`).join(' '), xs, ys }
+})
 
 const metricCols = computed(() => {
   const keys: string[] = []
@@ -88,7 +130,71 @@ onMounted(async () => {
 
     <p v-if="error" class="notice bad">{{ error }}</p>
 
-    <div v-if="catalog" class="panel row">
+    <nav class="subtabs" role="tablist">
+      <button v-for="t in tabs" :key="t.id" role="tab" :aria-selected="tab === t.id" :class="{ on: tab === t.id }" @click="tab = t.id">{{ t.label }}</button>
+    </nav>
+
+    <template v-if="tab === 'dashboard'">
+      <p v-if="!latest.length" class="panel muted">No runs yet. Use Run all suites, then come back here.</p>
+      <template v-else>
+        <div class="tiles">
+          <div class="panel tile"><span class="muted small">Cases passed</span><b>{{ pct(kpi.rate) }}</b><span class="muted small">{{ kpi.passed }} of {{ kpi.total }}</span></div>
+          <div class="panel tile"><span class="muted small">Suites passing</span><b>{{ kpi.passing }}/{{ kpi.suites }}</b><span class="muted small">{{ kpi.skipped }} skipped</span></div>
+          <div class="panel tile"><span class="muted small">Runs recorded</span><b>{{ history.length }}</b><span class="muted small">this session</span></div>
+          <div class="panel tile"><span class="muted small">Last run</span><b>{{ ago(chrono[chrono.length - 1].started_at) }}</b><span class="muted small">{{ chrono[chrono.length - 1].name }}</span></div>
+        </div>
+        <div class="charts">
+          <div class="panel">
+            <h3>Pass rate by suite</h3>
+            <div v-for="r in latest" :key="r.id" class="meter">
+              <span class="mname">{{ r.name }}</span>
+              <span class="bar"><span class="fill" :class="r.status === 'failed' ? 'bad' : 'ok'" :style="{ width: (r.total ? (r.passed / r.total) * 100 : 0) + '%' }"></span></span>
+              <span class="mval">{{ r.status === 'skipped' ? 'skip' : pct(r.total ? r.passed / r.total : null) }}</span>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Average score by metric</h3>
+            <div v-for="m in metricAvg" :key="m.k" class="meter">
+              <span class="mname">{{ m.k }}</span>
+              <span class="bar">
+                <span class="fill" :class="metricOk(m.k, m.v) ? 'ok' : 'bad'" :style="{ width: m.v * 100 + '%' }"></span>
+                <span v-if="threshold(m.k) !== undefined" class="tick" :style="{ left: (threshold(m.k) ?? 0) * 100 + '%' }"></span>
+              </span>
+              <span class="mval">{{ pct(m.v) }}</span>
+            </div>
+            <p class="muted small">Vertical mark = threshold.</p>
+          </div>
+          <div class="panel">
+            <h3>Pass rate over runs</h3>
+            <p v-if="trend.pts.length < 2" class="muted small">Run suites more than once to see a trend.</p>
+            <svg v-else :viewBox="`0 0 ${trend.W} ${trend.H}`" class="spark" role="img" aria-label="Pass rate per run">
+              <line x1="8" :x2="trend.W - 8" :y1="trend.ys(1)" :y2="trend.ys(1)" class="grid" />
+              <line x1="8" :x2="trend.W - 8" :y1="trend.ys(0)" :y2="trend.ys(0)" class="grid" />
+              <polyline :points="trend.line" class="trendline" />
+              <circle v-for="(v, i) in trend.pts" :key="i" :cx="trend.xs(i)" :cy="trend.ys(v)" r="3" class="dot" />
+            </svg>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Latest result per suite</h3>
+          <div class="scroll-x">
+            <table>
+              <thead><tr><th>Suite</th><th>Status</th><th>Passed</th><th>Failed</th><th>Duration</th><th>When</th></tr></thead>
+              <tbody>
+                <tr v-for="r in latest" :key="r.id">
+                  <td>{{ r.name }}</td>
+                  <td><span class="pill" :class="tone(r.status)">{{ r.status }}</span></td>
+                  <td>{{ r.passed }}/{{ r.total }}</td><td>{{ r.failed }}</td>
+                  <td>{{ r.duration_ms }} ms</td><td class="muted">{{ ago(r.started_at) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </template>
+    </template>
+
+    <div v-if="catalog && tab === 'suites'" class="panel row">
       <b>Engines</b>
       <span v-for="e in catalog.engines" :key="e.id" class="engine">
         <span class="pill" :class="e.available ? 'ok' : ''">{{ e.name }}</span>
@@ -96,7 +202,7 @@ onMounted(async () => {
       </span>
     </div>
 
-    <div v-if="catalog" class="suites">
+    <div v-if="catalog && tab === 'suites'" class="suites">
       <article v-for="s in catalog.suites" :key="s.id" class="panel suite">
         <div class="row between">
           <h3>{{ s.name }}</h3>
@@ -117,12 +223,13 @@ onMounted(async () => {
         </div>
         <div class="row">
           <button :disabled="running.includes(s.id)" @click="run(s.id)">{{ running.includes(s.id) ? 'Running...' : 'Run' }}</button>
-          <button v-if="results[s.id]?.cases.length" @click="open = results[s.id]">Details</button>
+          <button v-if="results[s.id]?.cases.length" @click="open = results[s.id]; tab = 'results'">Details</button>
         </div>
       </article>
     </div>
 
-    <div v-if="open" class="panel">
+    <p v-if="tab === 'results' && !open" class="panel muted">Run a suite or open one from History to see its cases.</p>
+    <div v-if="tab === 'results' && open" class="panel">
       <div class="row">
         <h3 class="grow">{{ open.name }} <span class="pill" :class="tone(open.status)">{{ open.status }}</span></h3>
         <label class="inline"><input v-model="onlyFailed" type="checkbox" /> failed only</label>
@@ -153,7 +260,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div v-if="catalog" class="panel">
+    <div v-if="catalog && tab === 'results'" class="panel">
       <h3>Gate definitions</h3>
       <div class="scroll-x">
         <table>
@@ -169,7 +276,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <div class="panel">
+    <div v-if="tab === 'history'" class="panel">
       <h3>History</h3>
       <p v-if="!history.length" class="muted">No runs yet.</p>
       <div v-else class="scroll-x">
@@ -181,7 +288,7 @@ onMounted(async () => {
               <td><span class="pill" :class="tone(h.status)">{{ h.status }}</span></td>
               <td>{{ h.passed }}/{{ h.total }}</td>
               <td class="muted">{{ ago(h.started_at) }}</td>
-              <td><button @click="show(h.id)">Open</button></td>
+              <td><button @click="show(h.id); tab = 'results'">Open</button></td>
             </tr>
           </tbody>
         </table>
@@ -206,6 +313,20 @@ onMounted(async () => {
 .fill.bad { background: var(--bad); }
 .okc { color: var(--ok); font-weight: 600; }
 .badc { color: var(--bad); font-weight: 600; }
+.subtabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.subtabs button { border: 0; background: none; padding: 8px 14px; cursor: pointer; color: var(--muted); font: inherit;
+  border-bottom: 2px solid transparent; margin-bottom: -1px; border-radius: 0; }
+.subtabs button.on { color: var(--ink); border-bottom-color: var(--brand); font-weight: 600; }
+.tiles { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.tile { display: flex; flex-direction: column; gap: 2px; }
+.tile b { font-size: 26px; }
+.charts { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+.bar { position: relative; }
+.tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); opacity: .6; }
+.spark { width: 100%; height: auto; }
+.grid { stroke: var(--line); stroke-width: 1; }
+.trendline { fill: none; stroke: var(--brand); stroke-width: 2; }
+.dot { fill: var(--brand); }
 .inline { display: inline-flex; gap: 6px; align-items: center; margin: 0; }
 .inline input { width: auto; }
 </style>
