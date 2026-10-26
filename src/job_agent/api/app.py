@@ -195,12 +195,13 @@ def create_app(
 def app_factory() -> FastAPI:
     """Entry point for ``uvicorn --factory job_agent.api.app:app_factory``.
 
-    If a built frontend exists (WEB_DIST, default ``web/dist``) it is served at ``/`` and the
-    API moves under ``/api``, which is the path the frontend already calls.
+    If WEB_DIST points at a built frontend it is served at ``/`` and the API moves under
+    ``/api``, which is the path the frontend already calls. Unset, only the API is served.
     """
     api = create_app()
-    dist = Path(os.environ.get("WEB_DIST", "web/dist"))
-    if not (dist / "index.html").is_file():
+    raw = os.environ.get("WEB_DIST", "")
+    dist = Path(raw) if raw else None
+    if dist is None or not (dist / "index.html").is_file():
         return api
     root = FastAPI(title="ApplyPilot", docs_url=None, redoc_url=None, openapi_url=None)
     root.mount("/api", api)
