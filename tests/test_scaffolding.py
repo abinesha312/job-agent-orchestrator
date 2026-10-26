@@ -1,29 +1,20 @@
-"""Stubs must fail loudly rather than pretend to work."""
+"""A few leftovers from the foundation: the gate numbers, and the autogen stub."""
 
 import uuid
 
 import pytest
 
-from job_agent.agents import email_finder, job_discovery, retrieval, tailoring
 from job_agent.agents.orchestrator import Orchestrator, get_orchestrator
 
 U = uuid.uuid4()
 
 
-@pytest.mark.parametrize("call", [
-    lambda: retrieval.retrieve_chunks_for_job(U, U),
-    lambda: tailoring.tailor_resume(U, U),
-    lambda: job_discovery.fetch_greenhouse("x"),
-    lambda: job_discovery.fetch_lever("x"),
-    lambda: job_discovery.fetch_adzuna("python"),
-    lambda: email_finder.find_contacts(U),
-    lambda: get_orchestrator("state_machine").run(U, U),
-    lambda: get_orchestrator("maf").run(U, U),
-    lambda: get_orchestrator("autogen").run(U, U),
-])
-def test_stubs_raise_not_implemented(call):
+def test_autogen_stays_unimplemented():
+    orch = get_orchestrator("autogen")
     with pytest.raises(NotImplementedError):
-        call()
+        orch.run(U, U)
+    with pytest.raises(NotImplementedError):
+        orch.resume_after_approval(U)
 
 
 def test_orchestrators_share_interface():

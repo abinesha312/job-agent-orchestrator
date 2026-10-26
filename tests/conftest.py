@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
-import io
-from pathlib import Path
+import os
+
+# keep the suite offline even if a key happens to be in the environment
+os.environ["LLM_JUDGE"] = "off"
+
+import io  # noqa: E402
+from pathlib import Path  # noqa: E402
 
 import pytest
 

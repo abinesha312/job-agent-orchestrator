@@ -108,7 +108,23 @@ CREATE TABLE contacts (
 
 CREATE INDEX ix_contacts_job_id ON contacts (job_id);
 
-INSERT INTO alembic_version (version_num) VALUES ('0001_initial') RETURNING alembic_version.version_num;
+-- 0002_run_log
+CREATE TABLE run_log (
+    id UUID NOT NULL, 
+    job_id UUID, 
+    resume_id UUID, 
+    step VARCHAR(64) NOT NULL, 
+    ok BOOLEAN DEFAULT true NOT NULL, 
+    message TEXT DEFAULT '' NOT NULL, 
+    metadata JSONB DEFAULT '{}'::jsonb NOT NULL, 
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL, 
+    PRIMARY KEY (id), 
+    FOREIGN KEY(job_id) REFERENCES jobs (job_id) ON DELETE SET NULL
+);
+
+CREATE INDEX ix_run_log_created ON run_log (created_at);
+
+INSERT INTO alembic_version (version_num) VALUES ('0002_run_log') RETURNING alembic_version.version_num;
 
 COMMIT;
 

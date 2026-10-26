@@ -97,3 +97,42 @@ def test_api_against_postgres(engine, pdf_bytes, tmp_path):
                            {"v": up2["version_id"]}).scalar()
     assert top == "experience"
     assert str(parent) == up["version_id"]
+
+
+def test_pipeline_roundtrip_uses_pgvector(engine, pdf_bytes, tmp_path):
+    from job_agent.agents.job_discovery import import_manual, persist_jobs
+    from job_agent.agents.resume import ingest_resume
+    from job_agent.agents.retrieval import score_match
+    from job_agent.db.session import make_session_factory
+    from job_agent.embeddings import FakeEmbedder
+    from job_agent.storage.pipeline import SqlPipelineStore
+    from job_agent.storage.repository import SqlResumeRepository
+
+    factory = make_session_factory(engine)
+    resumes = SqlResumeRepository(factory)
+    store = SqlPipelineStore(factory, tmp_path / "runs.jsonl")
+    embedder = FakeEmbedder(768)
+    ingested = ingest_resume(
+        pdf_bytes, "r.pdf", repository=resumes, embedder=embedder, upload_dir=tmp_path,
+    )
+    post = import_manual(
+        company="Example Corp",
+        title="Backend Engineer",
+        url=f"https://example.com/jobs/{uuid.uuid4()}",
+        jd_text="Must have: Python, FastAPI, PostgreSQL, Docker.\n",
+    )
+    saved, errors = persist_jobs(store, embedder, [post])
+    assert not errors
+    job = saved[0][0]
+    result = score_match(
+        job.job_id, ingested.version.version_id, store=store, resumes=resumes, embedder=embedder,
+    )
+    assert result.chunks
+    assert result.chunks[0].section in {"skills", "experience", "summary"}
+    hits = resumes.search_chunks(
+        ingested.version.resume_id, 1, embedder.embed(["Python FastAPI Docker"])[0], 3,
+    )
+    assert hits and hits[0][1] > 0
+    store.add_run(step="db-test", ok=True, message="roundtrip", job_id=job.job_id)
+    assert any(r.step == "db-test" for r in store.list_runs())
+    assert (tmp_path / "runs.jsonl").exists()

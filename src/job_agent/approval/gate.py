@@ -115,20 +115,11 @@ def approve(application: Any, *, approved_by: str) -> Any:
 
 @requires_approval
 def submit_application(application: Any, **kwargs: Any) -> None:
-    """Submit an approved application. STUB.
-
-    TODO(phase-6): prepare the submission packet (tailored resume version, cover note) for
-    the user to submit manually, or submit through an official ATS API where the posting
-    explicitly allows it. Never scrape LinkedIn, never bypass CAPTCHAs.
-    """
-    raise NotImplementedError("Phase 6: submission is not implemented; nothing was submitted.")
+    # kept on purpose. the user marks applied after they submit it themselves.
+    raise NotImplementedError("submission stays manual; nothing was submitted.")
 
 
 @requires_approval
 def send_outreach_email(application: Any, *, to: str, subject: str, body: str) -> None:
-    """Send a recruiter email for an approved application. STUB.
-
-    TODO(phase-5/6): send from a separate sender address with rate limits, CAN-SPAM
-    footer and opt-out handling. Requires approval of the specific message text.
-    """
-    raise NotImplementedError("Phase 5/6: email sending is not implemented; nothing was sent.")
+    # we never send. the draft sits there until the user copies it.
+    raise NotImplementedError("email sending is not implemented; nothing was sent.")
