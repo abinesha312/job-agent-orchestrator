@@ -191,3 +191,20 @@ export interface HistorySummary {
   by_event: Record<string, number>
   companies: { company_id: string; name: string }[]
 }
+
+export interface CompanyInfo {
+  id: string
+  name: string
+  careers_url: string
+  ats: string
+  sign_in: string
+  how: string
+  saved_jobs: number
+}
+
+export interface CompanySearchResult {
+  saved: number
+  created: number
+  errors: string[]
+  jobs: { job_id: string; company: string; title: string; url: string; location: string; created: boolean }[]
+}

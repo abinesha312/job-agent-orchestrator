@@ -1,6 +1,6 @@
 import type {
   AgentsOverview, Application, Chunk, Draft, EvalCatalog, EvalRun, HistoryDetail, HistoryRow,
-  HistorySummary, Job, PipelineRow, Task,
+  HistorySummary, Job, PipelineRow, Task, CompanyInfo, CompanySearchResult,
 } from './types'
 
 export class ApiError extends Error {
@@ -68,6 +68,9 @@ export const api = {
   evalCatalog: () => call<EvalCatalog>('GET', '/evals/catalog'),
   evalRun: (suite: string, sample = 5) => call<EvalRun>('POST', '/evals/run', { suite, sample }),
   evalRuns: () => call<{ runs: Omit<EvalRun, 'cases'>[] }>('GET', '/evals/runs'),
+  companies: () => call<{ companies: CompanyInfo[]; note: string }>('GET', '/companies'),
+  companySearch: (body: { companies: string[]; query: string; limit: number }) =>
+    call<CompanySearchResult>('POST', '/companies/search', body),
   historySummary: () => call<HistorySummary>('GET', '/history/summary'),
   historyApplications: (f: { company?: string; status?: string; q?: string; offset?: number; limit?: number }) => {
     const p = new URLSearchParams()

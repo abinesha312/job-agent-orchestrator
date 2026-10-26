@@ -3,12 +3,36 @@ import { onMounted, reactive, ref } from 'vue'
 import { api } from '../api'
 import { session } from '../session'
 import { statusTone } from '../format'
-import type { Job } from '../types'
+import type { CompanyInfo, CompanySearchResult, Job } from '../types'
 
 const jobs = ref<Job[]>([])
 const error = ref('')
 const msg = ref('')
 const busy = ref('')
+
+const companies = ref<CompanyInfo[]>([])
+const companyNote = ref('')
+const picked = ref<string[]>([])
+const cq = reactive({ query: 'software engineer', limit: 15 })
+const found = ref<CompanySearchResult | null>(null)
+
+async function loadCompanies() {
+  try {
+    const r = await api.companies()
+    companies.value = r.companies
+    companyNote.value = r.note
+  } catch (e) {
+    error.value = (e as Error).message
+  }
+}
+
+const searchCompanies = () =>
+  guard('companies', async () => {
+    found.value = await api.companySearch({ companies: picked.value, query: cq.query, limit: cq.limit })
+    loadCompanies()
+    const bad = found.value.errors.length ? ` Problems: ${found.value.errors.join('; ')}` : ''
+    return `Saved ${found.value.saved} (${found.value.created} new).${bad}`
+  })
 
 const board = reactive({ greenhouse: '', lever: '', ashby: '', roles: '' })
 const paste = reactive({ company: '', title: '', url: '', jd_text: '' })
@@ -74,13 +98,49 @@ const runAll = () =>
     return `Ran ${r.length} jobs. See the Agents tab for the task trail.`
   })
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadCompanies()
+})
 </script>
 
 <template>
   <section class="stack">
     <p v-if="msg" class="notice ok">{{ msg }}</p>
     <p v-if="error" class="notice bad">{{ error }}</p>
+
+    <div class="panel stack">
+      <h2>Company careers</h2>
+      <p class="muted">
+        Reads each company's public job search. No sign-in and no Google OAuth: these sites do not let a third
+        party log in for you, so open the posting and apply there yourself.
+      </p>
+      <div class="cgrid">
+        <label v-for="c in companies" :key="c.id" class="ccard" :class="{ on: picked.includes(c.id) }">
+          <input v-model="picked" type="checkbox" :value="c.id" />
+          <b>{{ c.name }}</b>
+          <span class="muted small">{{ c.ats }} &middot; {{ c.saved_jobs }} saved</span>
+          <span class="muted small">Sign-in there: {{ c.sign_in }}</span>
+          <a :href="c.careers_url" target="_blank" rel="noopener" class="small" @click.stop>Careers site</a>
+        </label>
+      </div>
+      <div class="row">
+        <input v-model="cq.query" placeholder="Keywords" style="max-width: 320px" />
+        <input v-model.number="cq.limit" type="number" min="1" max="50" style="width: 90px" title="Jobs per company" />
+        <button class="primary" :disabled="!!busy || !picked.length" @click="searchCompanies">
+          {{ busy === 'companies' ? 'Searching...' : 'Search selected' }}
+        </button>
+        <button @click="picked = companies.map((c) => c.id)">Select all</button>
+      </div>
+      <ul v-if="found?.jobs.length" class="found">
+        <li v-for="j in found.jobs" :key="j.job_id">
+          <b>{{ j.company }}</b>
+          <a :href="j.url" target="_blank" rel="noopener">{{ j.title }}</a>
+          <span class="muted small">{{ j.location }}</span>
+          <span v-if="j.created" class="pill ok">new</span>
+        </li>
+      </ul>
+    </div>
 
     <div class="panel stack">
       <h2>Find jobs</h2>
@@ -137,6 +197,13 @@ onMounted(load)
 </template>
 
 <style scoped>
+.small { font-size: 12px; }
+.cgrid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.ccard { display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; cursor: pointer; margin: 0; color: var(--ink); font-size: 14px; }
+.ccard.on { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
+.ccard input { width: auto; align-self: flex-start; }
+.found { list-style: none; padding: 0; margin: 0; }
+.found li { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .cols { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .cols2 { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
 </style>

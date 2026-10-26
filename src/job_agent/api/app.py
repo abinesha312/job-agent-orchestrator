@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from job_agent import __version__
 from job_agent.agents.resume import ingest_resume
 from job_agent.api.agent_routes import register_agent_routes
+from job_agent.api.company_routes import register_company_routes
 from job_agent.api.history_routes import register_history_routes
 from job_agent.api.pipeline_routes import register_pipeline_routes
 from job_agent.config import Settings, get_settings
@@ -187,6 +188,7 @@ def create_app(
     register_pipeline_routes(app)
     register_agent_routes(app)
     register_history_routes(app)
+    register_company_routes(app)
     return app
 
 
