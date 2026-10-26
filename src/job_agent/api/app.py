@@ -6,6 +6,7 @@ import os
 import uuid
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -198,6 +199,8 @@ def app_factory() -> FastAPI:
     If WEB_DIST points at a built frontend it is served at ``/`` and the API moves under
     ``/api``, which is the path the frontend already calls. Unset, only the API is served.
     """
+    # the eval libraries read their keys from the environment, not from Settings
+    load_dotenv(override=False)
     api = create_app()
     raw = os.environ.get("WEB_DIST", "")
     dist = Path(raw) if raw else None
