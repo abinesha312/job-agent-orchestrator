@@ -4,9 +4,6 @@ import { api } from './api'
 
 const tabs = [
   { to: '/agents', label: 'Agents' },
-  { to: '/resume', label: 'Resume' },
-  { to: '/jobs', label: 'Jobs' },
-  { to: '/review', label: 'Review' },
   { to: '/history', label: 'History' },
   { to: '/evals', label: 'Evals' },
 ]

@@ -1,16 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { api } from '../api'
-import { session } from '../session'
 import { clock } from '../format'
 import AgentCardView from '../components/AgentCardView.vue'
-import type { AgentsOverview, PipelineRow, Task } from '../types'
+import type { AgentsOverview, Task } from '../types'
 
 const data = ref<AgentsOverview | null>(null)
 const events = ref<Task[]>([])
 const error = ref('')
-const running = ref(false)
-const lastRun = ref<PipelineRow[]>([])
 const filter = ref('')
 let timer: ReturnType<typeof setInterval> | undefined
 
@@ -22,23 +19,6 @@ async function refresh() {
     error.value = ''
   } catch (e) {
     error.value = (e as Error).message
-  }
-}
-
-async function runPipeline() {
-  if (!session.resumeId) {
-    error.value = 'Parse a resume first (Resume tab).'
-    return
-  }
-  running.value = true
-  error.value = ''
-  try {
-    lastRun.value = (await api.run(session.resumeId)).results
-  } catch (e) {
-    error.value = (e as Error).message
-  } finally {
-    running.value = false
-    refresh()
   }
 }
 
@@ -66,34 +46,13 @@ onUnmounted(() => clearInterval(timer))
       <div class="grow">
         <h2>Agent workflow</h2>
         <p class="muted">
-          The main agent drives each job through its subagents and stops at your approval.
+          The main agent drives each job through its subagents and stops at your approval. Every task they run is logged here and scored in Evals.
           {{ data ? `${data.total_tasks} tasks logged.` : '' }}
         </p>
       </div>
-      <button class="primary" :disabled="running || !session.resumeId" @click="runPipeline">
-        {{ running ? 'Running...' : 'Run pipeline on all jobs' }}
-      </button>
-      <span v-if="!session.resumeId" class="muted">No resume yet.</span>
     </div>
 
     <p v-if="error" class="notice bad">{{ error }}</p>
-
-    <div v-if="lastRun.length" class="panel">
-      <h3>Last run</h3>
-      <div class="scroll-x">
-        <table>
-          <thead><tr><th>Job</th><th>Status</th><th>Steps</th><th>Notes</th></tr></thead>
-          <tbody>
-            <tr v-for="r in lastRun" :key="r.job_id">
-              <td class="mono">{{ r.job_id.slice(0, 8) }}</td>
-              <td><span class="pill" :class="r.needs_human_review ? 'warn' : 'ok'">{{ r.status }}</span></td>
-              <td>{{ r.steps.join(' > ') }}</td>
-              <td class="muted">{{ r.notes.join('; ') }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
 
     <template v-if="data">
       <div class="tree">

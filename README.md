@@ -49,7 +49,7 @@ npm run dev
 
 The dev server proxies `/api` to `http://localhost:8010`. Set `API_URL` in the shell to point it somewhere else. `npm run build` type-checks and writes `web/dist`.
 
-Tabs: Agents (main agent, its subagents, and every task they ran), Resume, Jobs, Review, Evals.
+Tabs: Agents (main agent, its subagents, and every task they ran), History (imported application history), Evals.
 
 ## Evals
 
